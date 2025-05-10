@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>迷途寻径</title>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; height: 100vh; background: #2c3e50; font-family: Arial, sans-serif; touch-action: none; }
+        #gameContainer { flex: 1; position: relative; overflow: hidden; }
+        #mazeCanvas { background: #34495e; touch-action: none; }
+        .controlBar { padding: 10px; background: #3a5069; display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+        button { padding: 12px 24px; font-size: 16px; background: #3498db; border: none; border-radius: 25px; color: white; touch-action: manipulation; transition: transform 0.2s; }
+        button:disabled { background: #7f8c8d; cursor: not-allowed; transform: none; }
+        button:active:not(:disabled) { transform: scale(0.95); }
+        .statusBar { padding: 10px; color: white; display: flex; justify-content: space-around; background: #3a5069; flex-wrap: wrap; }
+        select { padding: 10px; border-radius: 15px; background: #34495e; color: white; border: 1px solid #3498db; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: #34495e; padding: 20px; border-radius: 10px; color: white; display: flex; flex-direction: column; gap: 10px; min-width: 300px; }
+        .modal-content input, .modal-content select { padding: 8px; border-radius: 5px; border: 1px solid #3498db; background: #2c3e50; color: white; }
+        .leaderboard { position: fixed; right: 20px; top: 50px; background: #3a5069; padding: 10px; border-radius: 10px; color: white; max-width: 250px; }
+        #leaderboardList { max-height: 300px; overflow-y: auto; }
+        .leaderboard-entry { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid #34495e; }
+    </style>
+</head>
+<body>
+    <div class="statusBar">
+        <span>作者: <span id="level">kanwuqing</span></span>
+        <span>操作: <span id="moves">0</span></span>
+        <span>计算时间: <span id="calcTime">0ms</span></span>
+        <span>时间: <span id="time">0</span>s</span>
+    </div>
+    <div id="gameContainer">
+        <canvas id="mazeCanvas"></canvas>
+    </div>
+    <div class="controlBar">
+        <select id="mazeSize">
+            <option value="5">5x5</option>
+            <option value="7">7x7</option>
+            <option value="10">10x10</option>
+            <option value="15" selected>15x15</option>
+        </select>
+        <button id="generateBtn">生成地图</button>
+        <select id="updateMode">
+            <option value="realtime">实时更新路径</option>
+            <option value="manual">手动更新路径</option>
+        </select>
+        <button id="rotateBtn">旋转区块</button>
+        <button id="startBtn">开始移动</button>
+    </div>
+
+    <div id="leaderboardModal" class="modal">
+        <div class="modal-content">
+            <h3>通关成功！</h3>
+            <input type="text" id="playerName" placeholder="输入你的名字">
+            <select id="playerClass">
+                <option value="高一1班">高一1班</option>
+                <option value="高一2班">高一2班</option>
+                <option value="高一3班">高一3班</option>
+                <option value="高一4班">高一4班</option>
+                <option value="高一5班">高一5班</option>
+                <option value="高一6班">高一6班</option>
+                <option value="高一7班">高一7班</option>
+                <option value="高一8班">高一8班</option>
+                <option value="高一9班">高一9班</option>
+                <option value="高一10班">高一10班</option>
+                <option value="高一11班">高一11班</option>
+                <option value="高一12班">高一12班</option>
+                <option value="高二1班">高二1班</option>
+                <option value="高二2班">高二2班</option>
+                <option value="高二3班">高二3班</option>
+                <option value="高二4班">高二4班</option>
+                <option value="高二5班">高二5班</option>
+                <option value="高二6班">高二6班</option>
+                <option value="高二7班">高二7班</option>
+                <option value="高二8班">高二8班</option>
+                <option value="高二9班">高二9班</option>
+                <option value="高二10班">高二10班</option>
+                <option value="高二11班">高二11班</option>
+                <option value="高二12班">高二12班</option>
+                <option value="高三1班">高三1班</option>
+                <option value="高三2班">高三2班</option>
+                <option value="高三3班">高三3班</option>
+                <option value="高三4班">高三4班</option>
+                <option value="高三5班">高三5班</option>
+                <option value="高三6班">高三6班</option>
+                <option value="高三7班">高三7班</option>
+                <option value="高三8班">高三8班</option>
+                <option value="高三9班">高三9班</option>
+                <option value="高三10班">高三10班</option>
+                <option value="高三11班">高三11班</option>
+                <option value="高三12班">高三12班</option>
+            </select>
+            <button id="submitScore">提交成绩</button>
+        </div>
+    </div>
+
+    <div class="leaderboard">
+        <h3>排行榜</h3>
+        <div id="leaderboardList"></div>
+    </div>
+
+    <script>
+        class Maze {
+            constructor(rows = 15, cols = 15) {
+                this.rows = rows;
+                this.cols = cols;
+                this.grid = [];
+                this.start = {x: 0, y: 0};
+                this.end = {x: cols-1, y: rows-1};
+                this.generateMaze();
+                this.ensurePathExists();
+            }
+
+            generateMaze() {
+                const stack = [];
+                this.grid = Array(this.rows).fill().map(() => 
+                    Array(this.cols).fill().map(() => ({
+                        walls: [true, true, true, true],
+                        visited: false
+                    }))
+                );
+
+                let current = {x: 0, y: 0};
+                this.grid[current.y][current.x].visited = true;
+                stack.push(current);
+
+                while(stack.length > 0) {
+                    let neighbors = [];
+                    const dirs = [
+                        {x: 0, y:-1, wallIdx: 0},
+                        {x: 1, y: 0, wallIdx: 1},
+                        {x: 0, y: 1, wallIdx: 2},
+                        {x:-1, y: 0, wallIdx: 3}
+                    ];
+
+                    dirs.forEach(dir => {
+                        const nx = current.x + dir.x;
+                        const ny = current.y + dir.y;
+                        if (nx >=0 && nx < this.cols && ny >=0 && ny < this.rows && 
+                            !this.grid[ny][nx].visited) {
+                            neighbors.push({x: nx, y: ny, dir});
+                        }
+                    });
+
+                    if (neighbors.length > 0) {
+                        const next = neighbors[Math.floor(Math.random()*neighbors.length)];
+                        this.grid[current.y][current.x].walls[next.dir.wallIdx] = false;
+                        this.grid[next.y][next.x].walls[(next.dir.wallIdx+2)%4] = false;
+                        this.grid[next.y][next.x].visited = true;
+                        stack.push(current);
+                        current = next;
+                    } else {
+                        current = stack.pop();
+                    }
+                }
+
+                for(let y = 0; y < this.rows; y++) {
+                    for(let x = 0; x < this.cols; x++) {
+                        const rotations = Math.floor(Math.random() * 4);
+                        for(let i = 0; i < rotations; i++) {
+                            this.rotateCell(x, y, 1);
+                        }
+                    }
+                }
+            }
+
+            ensurePathExists() {
+                let retry = 0;
+                while(!this.findPath() && retry < 10) {
+                    this.generateMaze();
+                    retry++;
+                }
+                if(retry === 10) {
+                    console.error("无法生成有效路径");
+                }
+            }
+
+            rotateCell(x, y, direction) {
+                if(x < 0 || x >= this.cols || y < 0 || y >= this.rows) return;
+
+                const cell = this.grid[y][x];
+                const newWalls = [];
+                for(let i = 0; i < 4; i++) {
+                    newWalls[i] = cell.walls[(i - direction + 4) % 4];
+                }
+                cell.walls = newWalls;
+
+                const dirs = [
+                    {dx: 0, dy: -1, opposite: 2},
+                    {dx: 1, dy: 0, opposite: 3},
+                    {dx: 0, dy: 1, opposite: 0},
+                    {dx: -1, dy: 0, opposite: 1}
+                ];
+
+                for(let i = 0; i < 4; i++) {
+                    const nx = x + dirs[i].dx;
+                    const ny = y + dirs[i].dy;
+                    if(nx >=0 && nx < this.cols && ny >=0 && ny < this.rows) {
+                        const neighbor = this.grid[ny][nx];
+                        neighbor.walls[dirs[i].opposite] = newWalls[i];
+                    }
+                }
+            }
+
+            async findPath(visualCallback) {
+                const startNode = {x: this.start.x, y: this.start.y, g:0, h:0, f:0, parent:null};
+                const endNode = {x: this.end.x, y: this.end.y};
+                const openSet = [startNode];
+                const closedSet = new Set();
+                let current;
+
+                while(openSet.length > 0) {
+                    current = openSet.reduce((a,b) => a.f < b.f ? a : b);
+                    
+                    if(current.x === endNode.x && current.y === endNode.y) {
+                        return this.reconstructPath(current);
+                    }
+
+                    openSet.splice(openSet.indexOf(current), 1);
+                    closedSet.add(`${current.x},${current.y}`);
+
+                    if(visualCallback) {
+                        await visualCallback({
+                            open: openSet.map(n => ({x:n.x, y:n.y})),
+                            closed: Array.from(closedSet).map(s => {
+                                const [x,y] = s.split(','); 
+                                return {x:parseInt(x), y:parseInt(y)}
+                            }),
+                            current: {x: current.x, y: current.y}
+                        });
+                    }
+
+                    const neighbors = this.getNeighbors(current);
+                    for(const neighbor of neighbors) {
+                        if(!closedSet.has(`${neighbor.x},${neighbor.y}`)) {
+                            const gScore = current.g + 1;
+                            const existing = openSet.find(n => n.x === neighbor.x && n.y === neighbor.y);
+                            
+                            if(!existing || gScore < existing.g) {
+                                const hScore = Math.abs(neighbor.x - endNode.x) + 
+                                            Math.abs(neighbor.y - endNode.y);
+                                const newNode = {
+                                    x: neighbor.x,
+                                    y: neighbor.y,
+                                    g: gScore,
+                                    h: hScore,
+                                    f: gScore + hScore,
+                                    parent: current
+                                };
+
+                                if(!existing) {
+                                    openSet.push(newNode);
+                                } else {
+                                    Object.assign(existing, newNode);
+                                }
+                            }
+                        }
+                    }
+                }
+                return null;
+            }
+
+            getNeighbors(node) {
+                const neighbors = [];
+                const cell = this.grid[node.y]?.[node.x];
+                if(!cell) return neighbors;
+                
+                if(!cell.walls[1]) neighbors.push({x: node.x+1, y: node.y});
+                if(!cell.walls[2]) neighbors.push({x: node.x, y: node.y+1});
+                if(!cell.walls[3]) neighbors.push({x: node.x-1, y: node.y});
+                if(!cell.walls[0]) neighbors.push({x: node.x, y: node.y-1});
+                
+                return neighbors;
+            }
+
+            reconstructPath(node) {
+                const path = [];
+                while(node) {
+                    path.unshift(node);
+                    node = node.parent;
+                }
+                return path;
+            }
+        }
+
+        class Game {
+            constructor() {
+                this.canvas = document.getElementById('mazeCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.maze = new Maze();
+                this.path = [];
+                this.cellSize = 40;
+                this.ballPos = {...this.maze.start};
+                this.isMoving = false;
+                this.currentBlock = null;
+                this.startTime = null;
+                this.timerInterval = null;
+                this.visualElements = [];
+                this.isVisualizing = false;
+                this.lastPathState = null;
+                this.resize();
+                this.initEvent();
+                this.animate();
+                this.updateLeaderboardDisplay();
+                this.updatePath();
+            }
+
+            resize() {
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                this.canvas.width = rect.width;
+                this.canvas.height = rect.height;
+                this.cellSize = Math.min(
+                    this.canvas.width / this.maze.cols,
+                    this.canvas.height / this.maze.rows
+                );
+                this.draw();
+            }
+
+            draw() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                for(let y = 0; y < this.maze.rows; y++) {
+                    for(let x = 0; x < this.maze.cols; x++) {
+                        const cell = this.maze.grid[y][x];
+                        const px = x * this.cellSize;
+                        const py = y * this.cellSize;
+                        
+                        this.ctx.strokeStyle = '#95a5a6';
+                        this.ctx.lineWidth = 2;
+                        
+                        if(cell.walls[0]) this.drawLine(px, py, px+this.cellSize, py);
+                        if(cell.walls[1]) this.drawLine(px+this.cellSize, py, px+this.cellSize, py+this.cellSize);
+                        if(cell.walls[2]) this.drawLine(px, py+this.cellSize, px+this.cellSize, py+this.cellSize);
+                        if(cell.walls[3]) this.drawLine(px, py, px, py+this.cellSize);
+                    }
+                }
+
+                this.visualElements.forEach(el => {
+                    this.ctx.fillStyle = el.color;
+                    this.ctx.beginPath();
+                    this.ctx.arc(
+                        (el.x + 0.5) * this.cellSize,
+                        (el.y + 0.5) * this.cellSize,
+                        this.cellSize * 0.2, 0, Math.PI * 2
+                    );
+                    this.ctx.fill();
+                });
+
+                if (this.currentBlock) {
+                    this.ctx.fillStyle = 'rgba(255, 235, 59, 0.3)';
+                    this.ctx.fillRect(
+                        this.currentBlock.x * this.cellSize,
+                        this.currentBlock.y * this.cellSize,
+                        this.cellSize,
+                        this.cellSize
+                    );
+                }
+
+                if(this.path && this.path.length > 0) {
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(
+                        (this.path[0].x + 0.5) * this.cellSize,
+                        (this.path[0].y + 0.5) * this.cellSize
+                    );
+                    for(let i = 1; i < this.path.length; i++) {
+                        this.ctx.lineTo(
+                            (this.path[i].x + 0.5) * this.cellSize,
+                            (this.path[i].y + 0.5) * this.cellSize
+                        );
+                    }
+                    this.ctx.strokeStyle = '#e74c3c';
+                    this.ctx.lineWidth = 3;
+                    this.ctx.setLineDash([5, 5]);
+                    this.ctx.stroke();
+                    this.ctx.setLineDash([]);
+                }
+
+                this.ctx.fillStyle = '#3498db';
+                this.ctx.beginPath();
+                this.ctx.arc(
+                    (this.ballPos.x + 0.5) * this.cellSize,
+                    (this.ballPos.y + 0.5) * this.cellSize,
+                    this.cellSize * 0.3, 0, Math.PI * 2
+                );
+                this.ctx.fill();
+
+                this.ctx.fillStyle = '#2ecc71';
+                this.ctx.beginPath();
+                this.ctx.arc(
+                    (this.maze.end.x + 0.5) * this.cellSize,
+                    (this.maze.end.y + 0.5) * this.cellSize,
+                    this.cellSize * 0.3, 0, Math.PI * 2
+                );
+                this.ctx.fill();
+            }
+
+            drawLine(x1, y1, x2, y2) {
+                this.ctx.beginPath();
+                this.ctx.moveTo(x1, y1);
+                this.ctx.lineTo(x2, y2);
+                this.ctx.stroke();
+            }
+
+            initEvent() {
+                window.addEventListener('resize', () => this.resize());
+                
+                let lastTap = 0;
+                this.canvas.addEventListener('touchstart', e => {
+                    e.preventDefault();
+                    const rect = this.canvas.getBoundingClientRect();
+                    const touch = e.touches[0];
+                    const pos = {
+                        x: touch.clientX - rect.left,
+                        y: touch.clientY - rect.top
+                    };
+                    
+                    const now = Date.now();
+                    if (now - lastTap < 300) {
+                        this.handleDoubleTap(pos);
+                        lastTap = 0;
+                    } else {
+                        lastTap = now;
+                        this.selectBlock(pos);
+                    }
+                });
+
+                this.canvas.addEventListener('mousedown', e => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    const pos = {
+                        x: e.clientX - rect.left,
+                        y: e.clientY - rect.top
+                    };
+                    this.selectBlock(pos);
+                });
+
+                document.getElementById('rotateBtn').addEventListener('click', () => this.rotateBlock());
+                document.getElementById('startBtn').addEventListener('click', () => this.startMovement());
+                document.getElementById('generateBtn').addEventListener('click', () => {
+                    const size = parseInt(document.getElementById('mazeSize').value);
+                    this.maze = new Maze(size, size);
+                    this.ballPos = {...this.maze.start};
+                    this.path = [];
+                    this.currentBlock = null;
+                    this.resetTimer();
+                    this.updatePath();
+                    this.draw();
+                });
+                document.getElementById('submitScore').addEventListener('click', () => this.submitScore());
+            }
+
+            selectBlock(pos) {
+                const x = Math.floor(pos.x / this.cellSize);
+                const y = Math.floor(pos.y / this.cellSize);
+                
+                if (x >= 0 && x < this.maze.cols && y >=0 && y < this.maze.rows) {
+                    this.currentBlock = {x, y};
+                    this.draw();
+                } else {
+                    this.currentBlock = null;
+                    this.draw();
+                }
+            }
+
+            handleDoubleTap(pos) {
+                const x = Math.floor(pos.x / this.cellSize);
+                const y = Math.floor(pos.y / this.cellSize);
+                if (x >=0 && x < this.maze.cols && y >=0 && y < this.maze.rows) {
+                    this.rotateBlock();
+                }
+            }
+
+            rotateBlock() {
+                if (!this.currentBlock) {
+                    alert('请先选择要旋转的区块！');
+                    return;
+                }
+                
+                const x = this.currentBlock.x;
+                const y = this.currentBlock.y;
+
+                this.maze.rotateCell(x, y, 1);
+                document.getElementById('moves').textContent = parseInt(document.getElementById('moves').textContent) + 1;
+                this.startTimer();
+
+                if(document.getElementById('updateMode').value === 'realtime') {
+                    this.updatePath();
+                }
+                
+                this.currentBlock = null;
+                this.draw();
+            }
+
+            async updatePath() {
+                if(this.isVisualizing) return;
+                this.isVisualizing = true;
+                const startTime = performance.now();
+                
+                try {
+                    this.path = await this.maze.findPath((state) => {
+                        this.visualElements = [
+                            ...state.open.map(p => ({...p, color: '#3498db'})),
+                            ...state.closed.map(p => ({...p, color: '#e74c3c'})),
+                            {...state.current, color: '#2ecc71'}
+                        ];
+                        this.lastPathState = state;
+                        return new Promise(resolve => requestAnimationFrame(resolve));
+                    });
+                } finally {
+                    const time = performance.now() - startTime;
+                    document.getElementById('calcTime').textContent = `${Math.round(time)}ms`;
+                    this.isVisualizing = false;
+                }
+
+                // if (!this.path) {
+                //     alert('路径已阻断！请调整迷宫结构。');
+                // }
+                this.draw();
+            }
+
+            async startMovement() {
+                if (this.isMoving) return;
+                this.toggleControls(true);
+                
+                try {
+                    if(document.getElementById('updateMode').value === 'manual') {
+                        await this.updatePath();
+                    }
+                    if (!this.path || this.path.length === 0) {
+                        alert('找不到可行路径！');
+                        this.toggleControls(false);
+                        return;
+                    }
+                    
+                    this.isMoving = true;
+                    this.startTimer();
+                    
+                    for (const node of this.path) {
+                        const targetX = (node.x + 0.5) * this.cellSize;
+                        const targetY = (node.y + 0.5) * this.cellSize;
+                        await this.animateBall(targetX, targetY);
+                    }
+                    
+                    this.ballPos = {x: this.maze.end.x, y: this.maze.end.y};
+                    this.draw();
+                    
+                    if(this.ballPos.x === this.maze.end.x && this.ballPos.y === this.maze.end.y) {
+                        this.showLeaderboardModal();
+                        this.resetTimer();
+                    }
+                } finally {
+                    this.isMoving = false;
+                    this.toggleControls(false);
+                }
+            }
+
+            toggleControls(disabled) {
+                const controls = ['generateBtn', 'rotateBtn', 'startBtn'];
+                controls.forEach(id => {
+                    const btn = document.getElementById(id);
+                    btn.disabled = disabled;
+                });
+            }
+
+            showLeaderboardModal() {
+                document.getElementById('leaderboardModal').style.display = 'flex';
+            }
+
+            hideLeaderboardModal() {
+                document.getElementById('leaderboardModal').style.display = 'none';
+            }
+
+            submitScore() {
+                const name = document.getElementById('playerName').value.trim();
+                const className = document.getElementById('playerClass').value;
+                if (!name) {
+                    alert('请输入你的名字！');
+                    return;
+                }
+
+                const difficulty = this.maze.rows;
+                const moves = parseInt(document.getElementById('moves').textContent);
+                const time = parseInt(document.getElementById('time').textContent);
+                const score = difficulty * 1000 / (moves + 1) + (1000 - time * 10);
+
+                const entry = {
+                    name,
+                    className,
+                    score: Math.round(score),
+                    time,
+                    moves,
+                    difficulty,
+                    date: new Date().toISOString()
+                };
+
+                const leaderboard = JSON.parse(localStorage.getItem('leaderboard') || '[]');
+                leaderboard.push(entry);
+                localStorage.setItem('leaderboard', JSON.stringify(leaderboard));
+
+                this.updateLeaderboardDisplay();
+                this.hideLeaderboardModal();
+                this.resetGame();
+            }
+
+            updateLeaderboardDisplay() {
+                const list = document.getElementById('leaderboardList');
+                const entries = JSON.parse(localStorage.getItem('leaderboard') || '[]');
+                entries.sort((a, b) => b.score - a.score);
+                const topEntries = entries.slice(0, 10);
+
+                list.innerHTML = topEntries.map(entry => `
+                    <div class="leaderboard-entry">
+                        <span>${entry.name} (${entry.className})</span>
+                        <span>${entry.score}</span>
+                    </div>
+                `).join('');
+            }
+
+            resetGame() {
+                document.getElementById('moves').textContent = '0';
+                this.ballPos = {...this.maze.start};
+                this.path = [];
+                this.currentBlock = null;
+                this.draw();
+            }
+
+            resetTimer() {
+                if(this.timerInterval) clearInterval(this.timerInterval);
+                this.startTime = null;
+                document.getElementById('time').textContent = '0';
+            }
+
+            startTimer() {
+                if(this.startTime === null) {
+                    this.startTime = Date.now();
+                    this.timerInterval = setInterval(() => {
+                        const elapsed = Math.floor((Date.now() - this.startTime) / 1000);
+                        document.getElementById('time').textContent = elapsed;
+                    }, 1000);
+                }
+            }
+
+            animateBall(targetX, targetY) {
+                return new Promise(resolve => {
+                    const startX = (this.ballPos.x + 0.5) * this.cellSize;
+                    const startY = (this.ballPos.y + 0.5) * this.cellSize;
+                    const dx = targetX - startX;
+                    const dy = targetY - startY;
+                    const duration = Math.sqrt(dx*dx + dy*dy) / (this.cellSize * 5) * 1000;
+                    
+                    const startTime = Date.now();
+                    const animate = () => {
+                        const progress = (Date.now() - startTime) / duration;
+                        if (progress >= 1) {
+                            this.ballPos.x = Math.round((targetX / this.cellSize) - 0.5);
+                            this.ballPos.y = Math.round((targetY / this.cellSize) - 0.5);
+                            this.draw();
+                            resolve();
+                            return;
+                        }
+                        
+                        this.ballPos.x = (startX + dx * progress) / this.cellSize - 0.5;
+                        this.ballPos.y = (startY + dy * progress) / this.cellSize - 0.5;
+                        this.draw();
+                        requestAnimationFrame(animate);
+                    };
+                    animate();
+                });
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                this.draw();
+            }
+        }
+
+        window.addEventListener('load', () => new Game());
+    </script>
+</body>
+</html>
