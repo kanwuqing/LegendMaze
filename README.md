@@ -1,5 +1,5 @@
 # 迷宫探险游戏开发日志
-> [欢迎体验](/html/maze.html)
+> [欢迎体验](kanwuqing.github.io/html/maze.html)
 
 ## 一、核心问题与解决方案
 
